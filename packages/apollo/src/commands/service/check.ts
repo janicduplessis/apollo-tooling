@@ -10,6 +10,8 @@ import {
   CheckSchema_service_checkSchema_diffToPrevious_changes as Change,
   ChangeType
 } from "apollo-language-server/lib/graphqlTypes";
+import { ApolloConfig } from "apollo-language-server";
+import moment from "moment";
 
 const formatChange = (change: Change) => {
   let color = (x: string): string => x;
@@ -30,8 +32,67 @@ const formatChange = (change: Change) => {
 interface TasksOutput {
   gitContext?: GitContext;
   checkSchemaResult: CheckSchema_service_checkSchema;
+  config: ApolloConfig;
   shouldOutputJson: boolean;
+  shouldOutputMarkdown: boolean;
 }
+
+export function formatMarkdown({
+  checkSchemaResult,
+  config
+}: {
+  checkSchemaResult: CheckSchema_service_checkSchema;
+  // This type _could_ be `ApolloConfig`, but we don't actually need all those fields. When does this matter?
+  // When we're writing tests and we don't want to mock the entire `ApolloConfig` type and instead just want
+  // to feed in what we actually _need_.
+  config: {
+    service: {
+      name: string;
+    };
+    tag: string;
+  };
+}): string {
+  // This will always return a negative number of days. Use `-` to make it positive.
+  const days = -moment()
+    .add(checkSchemaResult.diffToPrevious.validationConfig.from, "second")
+    .diff(
+      moment().add(
+        checkSchemaResult.diffToPrevious.validationConfig.to,
+        "second"
+      ),
+      "days"
+    );
+
+  const breakingChanges = checkSchemaResult.diffToPrevious.changes.filter(
+    change => change.type === "FAILURE"
+  );
+
+  return `
+### Apollo Service Check
+🔄 Validated your local schema against schema tag \'${
+    config.tag
+  }\' on service \'${config.service.name}\'.
+🔢 Compared **${
+    checkSchemaResult.diffToPrevious.changes.length
+  } schema changes** against operations seen over the **last ${
+    days === 1 ? "day" : `${days} days`
+  }**.
+${
+  breakingChanges.length > 0
+    ? `❌ Found **${
+        checkSchemaResult.diffToPrevious.changes.filter(
+          change => change.type === "FAILURE"
+        ).length
+      } breaking changes** that would affect **${
+        checkSchemaResult.diffToPrevious.affectedQueries.length
+      } operations**`
+    : `✅ Found **no breaking changes**.`
+}
+
+🔗 [View your service check details](${checkSchemaResult.targetUrl}).
+`;
+}
+
 export default class ServiceCheck extends ProjectCommand {
   static aliases = ["schema:check"];
   static description =
@@ -56,7 +117,12 @@ export default class ServiceCheck extends ProjectCommand {
     }),
     json: flags.boolean({
       description:
-        "Output result in json, which can then be parsed by CLI tools such as jq."
+        "Output result in json, which can then be parsed by CLI tools such as jq.",
+      exclusive: ["markdown"]
+    }),
+    markdown: flags.boolean({
+      description: "Output result in markdown.",
+      exclusive: ["json"]
     })
   };
 
@@ -64,7 +130,9 @@ export default class ServiceCheck extends ProjectCommand {
     const {
       gitContext,
       checkSchemaResult,
-      shouldOutputJson
+      config,
+      shouldOutputJson,
+      shouldOutputMarkdown
     } = await this.runTasks<TasksOutput>(({ config, flags, project }) => [
       {
         title: "Checking service for changes",
@@ -95,6 +163,7 @@ export default class ServiceCheck extends ProjectCommand {
           });
 
           ctx.shouldOutputJson = !!flags.json;
+          ctx.shouldOutputMarkdown = !!flags.markdown;
         }
       }
     ]);
@@ -109,6 +178,8 @@ export default class ServiceCheck extends ProjectCommand {
       return this.log(
         JSON.stringify({ targetUrl, changes, validationConfig }, null, 2)
       );
+    } else if (shouldOutputMarkdown) {
+      return this.log(formatMarkdown({ checkSchemaResult, config }));
     }
 
     if (changes.length === 0) {
