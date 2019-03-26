@@ -1,5 +1,51 @@
-it("is turned on after summit", () => {});
+import { formatMarkdown } from "../check";
+import checkResult from "./fixtures/check-result.json";
 
+describe("markdown formatting", () => {
+  it("is correct with breaking changes", () => {
+    expect(
+      formatMarkdown({
+        config: { service: { name: "engine" }, tag: "staging" },
+        checkSchemaResult: checkResult.checkSchemaResult
+      })
+    ).toMatchInlineSnapshot(`
+"
+### Apollo Service Check
+🔄 Validated your local schema against schema tag 'staging' on service 'engine'.
+🔢 Compared **18 schema changes** against operations seen over the **last day**.
+❌ Found **7 breaking changes** that would affect **3 operations**
+
+🔗 [View your service check details](https://engine-dev.apollographql.com/service/engine/checks?schemaTag=Detached%3A%20d664f715645c5f0bb5ad4f2260cd6cb8d19bbc68&schemaTagId=f9f68e7e-1b5f-4eab-a3da-1fd8cd681111&from=2019-03-26T22%3A25%3A12.887Z).
+"
+`);
+  });
+
+  it("is correct with no breaking changes", () => {
+    expect(
+      formatMarkdown({
+        config: { service: { name: "engine" }, tag: "staging" },
+        checkSchemaResult: {
+          ...checkResult.checkSchemaResult,
+          diffToPrevious: {
+            ...checkResult.checkSchemaResult.diffToPrevious,
+            type: "NOTICE",
+            affectedQueries: [],
+            changes: []
+          }
+        }
+      })
+    ).toMatchInlineSnapshot(`
+"
+### Apollo Service Check
+🔄 Validated your local schema against schema tag 'staging' on service 'engine'.
+🔢 Compared **0 schema changes** against operations seen over the **last day**.
+✅ Found **no breaking changes**.
+
+🔗 [View your service check details](https://engine-dev.apollographql.com/service/engine/checks?schemaTag=Detached%3A%20d664f715645c5f0bb5ad4f2260cd6cb8d19bbc68&schemaTagId=f9f68e7e-1b5f-4eab-a3da-1fd8cd681111&from=2019-03-26T22%3A25%3A12.887Z).
+"
+`);
+  });
+});
 // jest.mock("apollo-codegen-core/lib/localfs", () => {
 //   return require("../../../__mocks__/localfs");
 // });
