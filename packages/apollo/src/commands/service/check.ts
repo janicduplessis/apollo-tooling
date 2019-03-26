@@ -94,7 +94,7 @@ export default class ServiceCheck extends ProjectCommand {
             ...(historicParameters && { historicParameters })
           });
 
-          ctx.shouldOutputJson = flags.json;
+          ctx.shouldOutputJson = !!flags.json;
         }
       }
     ]);
